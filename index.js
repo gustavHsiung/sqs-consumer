@@ -53,6 +53,9 @@ class Consumer extends EventEmitter {
       region: options.region || process.env.AWS_REGION || 'eu-west-1'
     });
 
+    this.autoDeleteMessage = (typeof options.autoDeleteMessage !== 'undefined') ?
+      options.autoDeleteMessage : true;
+
     auto(this);
   }
 
@@ -124,18 +127,22 @@ class Consumer extends EventEmitter {
     const consumer = this;
 
     this.emit('message_received', message);
-    async.series([
+    let tasks = [
       function handleMessage(done) {
         try {
           consumer.handleMessage(message, done);
         } catch (err) {
           done(new Error('Unexpected message handler failure: ' + err.message));
         }
-      },
-      function deleteMessage(done) {
-        consumer._deleteMessage(message, done);
       }
-    ], (err) => {
+    ];
+
+    if(this.autoDeleteMessage) tasks = tasks.concat(
+      (done) => {
+      consumer._deleteMessage(message, done);
+    });
+
+    async.series(tasks, (err) => {
       if (err) {
         if (err.name === SQSError.name) {
           consumer.emit('error', err, message);
